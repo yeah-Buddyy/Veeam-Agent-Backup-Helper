@@ -203,7 +203,7 @@ exit
 
 function PreventSleep {
     param (
-        [string]$PID
+        [string]$myPid
     )
 
     # Save the monitor script to a temporary file
@@ -212,7 +212,7 @@ function PreventSleep {
     Set-Content -Path $monitorScriptPath -Value $global:monitorScriptContent -Force
 
     # Start the monitor script
-    $mainScriptProcessId = $PID
+    $mainScriptProcessId = $myPid
     if (Test-Path "$monitorScriptPath" -PathType Leaf) {
         Start-Process powershell.exe -ArgumentList "-NoProfile -NoLogo -ExecutionPolicy Bypass -File `"$monitorScriptPath`" -MainScriptProcessId $mainScriptProcessId" -WindowStyle Hidden
     }
@@ -419,10 +419,16 @@ While($True){
             }
             Write-Verbose "RUNNING FIRST VEEAM ACTIVEFULLBACKUP..." -Verbose
             Start-Process -FilePath "$VEEAMEndpointTray"
-            $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -Wait -WindowStyle hidden #-WindowStyle Minimized
+            $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -WindowStyle hidden #-WindowStyle Minimized
             # Get the PID of the started process
             $processPid = $p.Id
-            PreventSleep -PID $processPid
+            PreventSleep -myPid $processPid
+            # Loop to check if the process is still running
+            while ($p.HasExited -eq $false) {
+                Start-Sleep -Seconds 1
+            }
+            # The process has exited, continue with the rest of the script
+            Write-Verbose "Veeam Process with PID $processPid has exited" -Verbose
             # https://helpcenter.veeam.com/archive/agentforwindows/50/userguide/backup_cmd.html#monitoring-backup-job-status
             $exitCode = $p.ExitCode
             if ($exitCode -eq 0) {
@@ -471,10 +477,16 @@ While($True){
             CheckIfEnoughSpace -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath -USBDriveLetter $USBDriveLetter
             Write-Verbose "RUNNING VEEAM ACTIVEFULLBACKUP IF OLDER THAN X MONTHS..." -Verbose
             Start-Process -FilePath "$VEEAMEndpointTray"
-            $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -Wait -WindowStyle hidden #-WindowStyle Minimized
+            $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -WindowStyle hidden #-WindowStyle Minimized
             # Get the PID of the started process
             $processPid = $p.Id
-            PreventSleep -PID $processPid
+            PreventSleep -myPid $processPid
+            # Loop to check if the process is still running
+            while ($p.HasExited -eq $false) {
+                Start-Sleep -Seconds 1
+            }
+            # The process has exited, continue with the rest of the script
+            Write-Verbose "Veeam Process with PID $processPid has exited" -Verbose
             # https://helpcenter.veeam.com/archive/agentforwindows/50/userguide/backup_cmd.html#monitoring-backup-job-status
             $exitCode = $p.ExitCode
             if ($exitCode -eq 0) {
@@ -523,10 +535,16 @@ While($True){
                 }
                 Write-Verbose "RUNNING VEEAM INCREMENTAL BACKUP..." -Verbose
                 Start-Process -FilePath "$VEEAMEndpointTray"
-                $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/backup" -PassThru -Wait -WindowStyle hidden #-WindowStyle Minimized
+                $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/backup" -PassThru -WindowStyle hidden #-WindowStyle Minimized
                 # Get the PID of the started process
                 $processPid = $p.Id
-                PreventSleep -PID $processPid
+                PreventSleep -myPid $processPid
+                # Loop to check if the process is still running
+                while ($p.HasExited -eq $false) {
+                    Start-Sleep -Seconds 1
+                }
+                # The process has exited, continue with the rest of the script
+                Write-Verbose "Veeam Process with PID $processPid has exited" -Verbose
                 # https://helpcenter.veeam.com/archive/agentforwindows/50/userguide/backup_cmd.html#monitoring-backup-job-status
                 $exitCode = $p.ExitCode
                 if ($exitCode -eq 0) {
