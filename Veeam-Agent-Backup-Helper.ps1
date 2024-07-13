@@ -102,7 +102,8 @@ function Get-OldestAndSecondOldestVbkFiles {
 
 function Show-MessageBoxAndDeleteVibFiles {
     param (
-        [string]$USBDriveVeeamJobFolderPath
+        [string]$USBDriveVeeamJobFolderPath,
+        [switch]$Force
     )
 
     $vbkFiles = Get-OldestAndSecondOldestVbkFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
@@ -112,36 +113,42 @@ function Show-MessageBoxAndDeleteVibFiles {
 
     # Get .vib files older than the second oldest .vbk file (excluding .vbm files)
     $vibFilesToDelete = Get-ChildItem -Path $USBDriveVeeamJobFolderPath -Filter "*.vib" |
-        Where-Object { $_.LastWriteTime -lt (Get-Item $secondOldestVbkFilePath).LastWriteTime -and $_.Name -notlike "*.vbm" }
+        Where-Object { $_.LastWriteTime -lt (Get-Item $secondOldestVbkFilePath).LastWriteTime -and $_.Name -notlike "*.vbm" } |
+        Select-Object FullName, Name, LastWriteTime
 
-    # Prepare message box text with file paths and last write dates
-    $message = "Do you want to delete the oldest backup chain now that you have $DeleteBackupChain full backups on your backup storage?`n`n`n.VIB FILE`n`n"
-    foreach ($file in $vibFilesToDelete) {
-        $message += "$($file) - Last Write Time: $($file.LastWriteTime)`n`n"
+    # Add the oldest VBK file to the list for display
+    $vibFilesToDelete += [PSCustomObject]@{
+        FullName = $oldestVbkFilePath
+        Name = (Split-Path $oldestVbkFilePath -Leaf)
+        LastWriteTime = $oldestVbkFile.LastWriteTime
     }
-    # extract only the filename with its extension from path
-    $outputPath = Split-Path $oldestVbkFilePath -leaf
-    $message += "`n.VBK FILE`n`n$($outputPath) - Last Write Time: $($oldestVbkFile.LastWriteTime)`n"
-    $message += "`nDo you want to proceed with deletion?"
 
-    # Show message box
-    $result = Show-MessageBox -Message "$message" -Title "Confirm Deletion" -Buttons "YesNoCancel" -Icon "Information"
-
-    # Process user response
-    switch ($result) {
-        'Yes' {
-            foreach ($file in $vibFilesToDelete) {
-                # Perform deletion
+    if ($Force) {
+        # Force deletion without confirmation
+        foreach ($file in $vibFilesToDelete) {
+            try {
                 Remove-Item -Path $file.FullName -Force
+                Write-Output "Deleted: $($file.FullName)"
+            } catch {
+                Write-Warning "Failed to delete $($file.FullName): $_"
             }
-            Remove-Item -Path "$oldestVbkFilePath" -Force
-            Write-Verbose "Files deleted." -Verbose
         }
-        'No' {
-            Write-Verbose "Deletion canceled by user." -Verbose
-        }
-        'Cancel' {
-            Write-Verbose "Operation canceled." -Verbose
+    } else {
+        # Display the files in a grid view
+        $selectedFiles = $vibFilesToDelete | Out-GridView -Title "Select files to delete (Select All to delete the oldest backup chain)" -PassThru
+
+        if ($selectedFiles) {
+            foreach ($file in $selectedFiles) {
+                try {
+                    # Perform deletion
+                    Remove-Item -Path $file.FullName -Force
+                    Write-Output "Deleted: $($file.FullName)"
+                } catch {
+                    Write-Warning "Failed to delete $($file.FullName): $_"
+                }
+            }
+        } else {
+            Write-Output "No files selected for deletion."
         }
     }
 }
@@ -435,7 +442,22 @@ While($True){
                 Write-Verbose "FIRST VEEAM ACTIVE FULL BACKUP SUCCESSFULLY COMPLETED!" -Verbose
                 $countvbkfiles = (Get-ChildItem "$USBDriveVeeamJobFolderPath" "*.vbk" | Measure-Object).Count
                 if ($countvbkfiles -ge $DeleteBackupChain -and $DeleteBackupChain -ne 1 -and $DeleteBackupChain -ne 0) {
-                    Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
+                    $message = "Do you want to delete the oldest backup chain now that you have $DeleteBackupChain full backups on your backup storage?"
+                    # Show message box
+                    $result = Show-MessageBox -Message "$message" -Title "Confirm Deletion" -Buttons "YesNoCancel" -Icon "Information"
+
+                    # Process user response
+                    switch ($result) {
+                        'Yes' {
+                            Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
+                        }
+                        'No' {
+                            Write-Verbose "Deletion canceled by user." -Verbose
+                        }
+                        'Cancel' {
+                            Write-Verbose "Operation canceled." -Verbose
+                        }
+                    }
                 }
             }
             else {
@@ -493,7 +515,22 @@ While($True){
                 Write-Verbose "SUCCESSFULLY COMPLETED VEEAM ACTIVEFULLBACKUP (IF OLDER THAN X MONTHS)" -Verbose
                 $countvbkfiles = (Get-ChildItem "$USBDriveVeeamJobFolderPath" "*.vbk" | Measure-Object).Count
                 if ($countvbkfiles -ge $DeleteBackupChain -and $DeleteBackupChain -ne 1 -and $DeleteBackupChain -ne 0) {
-                    Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
+                    $message = "Do you want to delete the oldest backup chain now that you have $DeleteBackupChain full backups on your backup storage?"
+                    # Show message box
+                    $result = Show-MessageBox -Message "$message" -Title "Confirm Deletion" -Buttons "YesNoCancel" -Icon "Information"
+
+                    # Process user response
+                    switch ($result) {
+                        'Yes' {
+                            Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
+                        }
+                        'No' {
+                            Write-Verbose "Deletion canceled by user." -Verbose
+                        }
+                        'Cancel' {
+                            Write-Verbose "Operation canceled." -Verbose
+                        }
+                    }
                 }
             }
             else {
