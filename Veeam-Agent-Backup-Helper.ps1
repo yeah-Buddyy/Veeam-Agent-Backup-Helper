@@ -153,6 +153,127 @@ function Show-MessageBoxAndDeleteVibFiles {
     }
 }
 
+function CheckDriveHealth {
+    # Define thresholds
+    $MaxWearValue = 80
+    $MaxRWErrors = 100
+    $MaxReallocatedSectors = 1
+    $MaxPendingSectors = 1
+
+    # Get SMART failure data once
+    $DriveSMARTStatuses = Get-CimInstance -Namespace root\wmi -Class MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue | Where-Object { $_.PredictFailure -eq $true }
+
+    # Obtain physical disk details
+    $Disks = Get-PhysicalDisk | Where-Object { $_.BusType -match "NVMe|SATA|SAS|ATAPI|RAID" }
+
+    # Initialize the array to accumulate all output messages
+    $OutputMsgsReturn = @()
+
+    # Loop through each disk
+    foreach ($Disk in ($Disks | Sort-Object DeviceID)) {
+        # Obtain disk health information
+        $DiskHealth = Get-StorageReliabilityCounter -PhysicalDisk (Get-PhysicalDisk -FriendlyName $Disk.FriendlyName) | 
+                      Select-Object Wear, ReadErrorsTotal, ReadErrorsUncorrected, ReadErrorsCorrected, WriteErrorsTotal, WriteErrorsUncorrected, WriteErrorscorrected, Temperature, TemperatureMax
+
+        $DriveDetails = Get-PhysicalDisk -FriendlyName $Disk.FriendlyName | Select-Object MediaType, HealthStatus
+        $DriveSMARTStatus = $DriveSMARTStatuses | Where-Object { $_.InstanceName -eq $Disk.DeviceID }
+
+        # Calculate temperature delta
+        $DiskTempDelta = $DiskHealth.Temperature - $DiskHealth.TemperatureMax
+
+        # Create custom PSObject
+        $DiskHealthState = [PSCustomObject]@{
+            "Disk Number"                    = $Disk.DeviceID
+            "FriendlyName"                   = $Disk.FriendlyName
+            "HealthStatus"                   = $DriveDetails.HealthStatus
+            "MediaType"                      = $DriveDetails.MediaType
+            "Disk Wear"                      = $DiskHealth.Wear
+            "Read Errors Total"              = $DiskHealth.ReadErrorsTotal
+            "Temperature Delta"              = $DiskTempDelta
+            "Read Errors Uncorrected"        = $DiskHealth.ReadErrorsUncorrected
+            "Read Errors Corrected"          = $DiskHealth.ReadErrorsCorrected
+            "Write Errors Total"             = $DiskHealth.WriteErrorsTotal
+            "Write Errors Uncorrected"       = $DiskHealth.WriteErrorsUncorrected
+            "Write Errors Corrected"         = $DiskHealth.WriteErrorsCorrected
+            "Temperature Max"                = $DiskHealth.TemperatureMax
+            "Temperature Current"            = $DiskHealth.Temperature
+        }
+
+        # Array to accumulate output messages
+        $OutputMsgs = @()
+
+        # Check conditions and set output messages
+        if ($null -ne $DriveDetails.HealthStatus -and $DriveDetails.HealthStatus -ne "Healthy") {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - is in a $([string]$DriveDetails.HealthStatus.ToLower()) state"
+        }
+
+        if ($DriveSMARTStatus) {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - SMART predicted failure detected with reason code $($DriveSMARTStatus.Reason)"
+        }
+
+        if ($null -ne [int]$DiskHealth.Wear -and [int]$DiskHealth.Wear -ge $MaxWearValue) {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - Disk failure likely. Current wear value: $($DiskHealth.Wear), above threshold: $MaxWearValue%"
+        }
+
+        if ($null -ne [int]$DiskHealth.ReadErrorsTotal -and [int]$DiskHealth.ReadErrorsTotal -ge $MaxRWErrors) {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - High number of read errors: $($DiskHealth.ReadErrorsTotal), above threshold: $MaxRWErrors"
+        }
+
+        if ($null -ne [int]$DiskHealth.WriteErrorsTotal -and [int]$DiskHealth.WriteErrorsTotal -ge $MaxRWErrors) {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - High number of write errors: $($DiskHealth.WriteErrorsTotal), above threshold: $MaxRWErrors"
+        }
+
+        if ($null -ne [int]$DiskHealth.ReadErrorsCorrected -and [int]$DiskHealth.ReadErrorsCorrected -ge $MaxReallocatedSectors) {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - High number of reallocated sectors: $($DiskHealth.ReadErrorsCorrected), above threshold: $MaxReallocatedSectors"
+        }
+
+        if ($null -ne [int]$DiskHealth.ReadErrorsUncorrected -and [int]$DiskHealth.ReadErrorsUncorrected -ge $MaxPendingSectors) {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - High number of pending sectors: $($DiskHealth.ReadErrorsUncorrected), above threshold: $MaxPendingSectors"
+        }
+
+        if ($null -ne [int]$DiskHealth.Temperature -and [int]$DiskHealth.Temperature -gt $DiskHealth.TemperatureMax -and [int]$DiskHealth.TemperatureMax -gt 0) {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - Running $DiskTempDelta degrees above max temperature: $($DiskHealth.TemperatureMax)"
+        }
+
+        if (-not $OutputMsgs) {
+            $OutputMsgs += "Disk $($Disk.DeviceID) / $($Disk.FriendlyName) - is in a healthy state. No action required."
+        }
+
+        # Output the messages in color
+        foreach ($msg in $OutputMsgs) {
+            if ($msg -match "is in a healthy state") {
+                Write-Host $msg -ForegroundColor Green
+            } else {
+                Write-Host $msg -ForegroundColor Red
+                $OutputMsgsReturn += $msg
+            }
+        }
+    }
+
+    if ($OutputMsgsReturn.count -gt 0) {
+        # $OutputMsgsReturn | ForEach-Object { Write-Host $_ }
+        # Combine all messages into a single string
+        $AllMessages = $OutputMsgsReturn -join "`n"
+
+        $result = Show-MessageBox -Message "$AllMessages" -Title "Unhealthy drive detected, do you still want to proceed?" -Buttons "YesNoCancel" -Icon "Critical"
+
+        # Process user response
+        switch ($result) {
+            'Yes' {
+                break
+            }
+            'No' {
+                Write-Verbose "User double checks their hard drives." -Verbose
+                exit
+            }
+            'Cancel' {
+                Write-Verbose "User double checks their hard drives." -Verbose
+                exit
+            }
+        }
+    }
+}
+
 # Prevent Windows from going to sleep during backup
 $global:monitorScriptContent = @'
 param (
@@ -424,6 +545,7 @@ While($True){
                 Write-Verbose "User did not want to do a backup, so we continue" -Verbose
                 continue
             }
+            CheckDriveHealth
             Write-Verbose "RUNNING FIRST VEEAM ACTIVEFULLBACKUP..." -Verbose
             Start-Process -FilePath "$VEEAMEndpointTray"
             $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -WindowStyle hidden #-WindowStyle Minimized
@@ -496,6 +618,7 @@ While($True){
                 Write-Verbose "User did not want to do a backup, so we continue" -Verbose
                 continue
             }
+            CheckDriveHealth
             CheckIfEnoughSpace -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath -USBDriveLetter $USBDriveLetter
             Write-Verbose "RUNNING VEEAM ACTIVEFULLBACKUP IF OLDER THAN X MONTHS..." -Verbose
             Start-Process -FilePath "$VEEAMEndpointTray"
@@ -570,6 +693,7 @@ While($True){
                     Write-Verbose "User did not want to do a backup, so we continue" -Verbose
                     continue
                 }
+                CheckDriveHealth
                 Write-Verbose "RUNNING VEEAM INCREMENTAL BACKUP..." -Verbose
                 Start-Process -FilePath "$VEEAMEndpointTray"
                 $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/backup" -PassThru -WindowStyle hidden #-WindowStyle Minimized
