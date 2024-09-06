@@ -32,6 +32,8 @@ $CheckEverySeconds = "20" # Seconds
 # Path of USB_Disk_Eject.exe
 $USBDiskEjectPath = "$PSScriptRoot\USB_Disk_Eject.exe"
 
+#####################
+
 # turn off logging the event "Could not find the drive 'E:\'. The drive might not be ready or might not be mapped" in event viewer
 $LogProviderHealthEvent = $false
 
