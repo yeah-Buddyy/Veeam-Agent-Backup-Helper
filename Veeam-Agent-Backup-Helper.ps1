@@ -32,13 +32,8 @@ $CheckEverySeconds = "20" # Seconds
 # Path of USB_Disk_Eject.exe
 $USBDiskEjectPath = "$PSScriptRoot\USB_Disk_Eject.exe"
 
-#################
-
 # turn off logging the event "Could not find the drive 'E:\'. The drive might not be ready or might not be mapped" in event viewer
 $LogProviderHealthEvent = $false
-
-# set error action preference so errors don't stop and the trycatch kicks in to handle gracefully
-$erroractionpreference = "Continue"
 
 $systemDirectory = [System.Environment]::SystemDirectory
 
@@ -127,7 +122,7 @@ function Show-MessageBoxAndDeleteVibFiles {
         # Force deletion without confirmation
         foreach ($file in $vibFilesToDelete) {
             try {
-                Remove-Item -Path $file.FullName -Force
+                Remove-Item -Path $file.FullName -Force -ErrorAction Stop
                 Write-Output "Deleted: $($file.FullName)"
             } catch {
                 Write-Warning "Failed to delete $($file.FullName): $_"
@@ -141,7 +136,7 @@ function Show-MessageBoxAndDeleteVibFiles {
             foreach ($file in $selectedFiles) {
                 try {
                     # Perform deletion
-                    Remove-Item -Path $file.FullName -Force
+                    Remove-Item -Path $file.FullName -Force -ErrorAction Stop
                     Write-Output "Deleted: $($file.FullName)"
                 } catch {
                     Write-Warning "Failed to delete $($file.FullName): $_"
@@ -363,7 +358,7 @@ function Get-DriveLetter {
 }
 
 try {
-    $USBDriveLetter = Get-DriveLetter -Path $USBDriveVeeamBackupPath
+    $USBDriveLetter = Get-DriveLetter -Path $USBDriveVeeamBackupPath -ErrorAction Stop
     Write-Verbose "Drive letter for '$USBDriveVeeamBackupPath' is '$USBDriveLetter'" -Verbose
 } catch {
     Write-Verbose "Error processing '$USBDriveVeeamBackupPath': $_" -Verbose
@@ -375,7 +370,7 @@ try {
 function Check-VeeamLogs {
     param (
         [string]$VEEAMLog,
-        [string]$PSScriptRoot
+        [string]$OutputPath
     )
 
     # Extract Veeam Errors from today
@@ -385,7 +380,7 @@ function Check-VeeamLogs {
         $errorLogContent = Get-Content -Path $VEEAMLog | Select-String -Pattern "\[$todaysDate\s\d+\:\d+:\d+]\s\<\d+\>\sError"
         
         if ($errorLogContent) {
-            $logFolder = "$PSScriptRoot\Veeam-Logs"
+            $logFolder = "$OutputPath\Veeam-Logs"
             if (-not ([System.IO.Directory]::Exists($logFolder))) {
                 New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
             }
@@ -461,7 +456,7 @@ function Check-FileSystemType {
         }
         default {
             Write-Verbose "We found $fileSystemType, which is not supported" -Verbose
-            Show-MessageBox -Message "Please convert the FileSystemType of your backup storage device to NTFS or ReFS and restart the script" -Title "Bad FileSystemType" -Buttons "OK" -Icon "Critical"
+            Show-MessageBox -Message "Please convert the FileSystemType of your backup storage device to NTFS, ReFS or exFAT and restart the script" -Title "Bad FileSystemType" -Buttons "OK" -Icon "Critical"
             exit
         }
     }
@@ -535,6 +530,7 @@ While($True){
 
         ##### VEEAM FIRST ACTIVE FULLBACKUP #####
         # If the Veeam Job Folder exists and there is no Activefullback in it, it will create one. Even if the Veeam Job Folder does not exist, it will create a fullbackup.
+        # https://stackoverflow.com/questions/63297132/test-path-check-if-file-exist
         if ( ([System.IO.Directory]::Exists("$USBDriveVeeamJobFolderPath")) -and (-not ([System.IO.File]::Exists("$USBDriveVeeamJobFolderPath\$latestVbkFile"))) -or ($VeeamJobFolderCount -eq 0) -and ([System.IO.Directory]::Exists("$USBDriveVeeamBackupPath")) ){
             # Store the function call in a string
             $functionCall = 'Confirm-Message -message "First Active Fullbackup"'
@@ -548,7 +544,7 @@ While($True){
             CheckDriveHealth
             Write-Verbose "RUNNING FIRST VEEAM ACTIVEFULLBACKUP..." -Verbose
             Start-Process -FilePath "$VEEAMEndpointTray"
-            $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -WindowStyle hidden #-WindowStyle Minimized
+            $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -WindowStyle hidden
             # Get the PID of the started process
             $processPid = $p.Id
             PreventSleep -myPid $processPid
@@ -585,7 +581,7 @@ While($True){
             else {
                 Write-Verbose "VEEAM BACKUP ERROR! ERROR CODE $exitCode" -Verbose
                 Show-MessageBox -Message "Veeam Backup Error! Please Check your Veeam Logs for more details" -Title "Veeam Backup Error!" -Buttons "OK" -Icon "Critical"
-                $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -PSScriptRoot $PSScriptRoot
+                $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -OutputPath $PSScriptRoot
                 if ($logFilePath) {
                     Write-Verbose "Log file created at: $logFilePath" -Verbose
                     Start-Process "$systemDirectory\notepad.exe" "$logFilePath"
@@ -622,7 +618,7 @@ While($True){
             CheckIfEnoughSpace -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath -USBDriveLetter $USBDriveLetter
             Write-Verbose "RUNNING VEEAM ACTIVEFULLBACKUP IF OLDER THAN X MONTHS..." -Verbose
             Start-Process -FilePath "$VEEAMEndpointTray"
-            $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -WindowStyle hidden #-WindowStyle Minimized
+            $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/activefull" -PassThru -WindowStyle hidden
             # Get the PID of the started process
             $processPid = $p.Id
             PreventSleep -myPid $processPid
@@ -659,7 +655,7 @@ While($True){
             else {
                 Write-Verbose "VEEAM BACKUP ERROR! ERROR CODE $exitCode" -Verbose
                 Show-MessageBox -Message "Veeam Backup Error! Please Check your Veeam Logs for more details" -Title "Veeam Backup Error!" -Buttons "OK" -Icon "Critical"
-                $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -PSScriptRoot $PSScriptRoot
+                $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -OutputPath $PSScriptRoot
                 if ($logFilePath) {
                     Write-Verbose "Log file created at: $logFilePath" -Verbose
                     Start-Process "$systemDirectory\notepad.exe" "$logFilePath"
@@ -696,7 +692,7 @@ While($True){
                 CheckDriveHealth
                 Write-Verbose "RUNNING VEEAM INCREMENTAL BACKUP..." -Verbose
                 Start-Process -FilePath "$VEEAMEndpointTray"
-                $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/backup" -PassThru -WindowStyle hidden #-WindowStyle Minimized
+                $p = Start-Process -FilePath "$VEEAMEndpointManager" -ArgumentList "/backup" -PassThru -WindowStyle hidden
                 # Get the PID of the started process
                 $processPid = $p.Id
                 PreventSleep -myPid $processPid
@@ -714,7 +710,7 @@ While($True){
                 else {
                     Write-Verbose "VEEAM BACKUP ERROR! ERROR CODE $exitCode" -Verbose
                     Show-MessageBox -Message "Veeam Backup Error! Please Check your Veeam Logs for more details" -Title "Veeam Backup Error!" -Buttons "OK" -Icon "Critical"
-                    $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -PSScriptRoot $PSScriptRoot
+                    $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -OutputPath $PSScriptRoot
                     if ($logFilePath) {
                         Write-Verbose "Log file created at: $logFilePath" -Verbose
                         Start-Process "$systemDirectory\notepad.exe" "$logFilePath"
