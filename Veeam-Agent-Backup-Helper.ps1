@@ -37,7 +37,7 @@ $USBDiskEjectPath = "$PSScriptRoot\USB_Disk_Eject.exe"
 # turn off logging the event "Could not find the drive 'E:\'. The drive might not be ready or might not be mapped" in event viewer
 $LogProviderHealthEvent = $false
 
-$systemDirectory = [System.Environment]::SystemDirectory
+$forceDeleteOldestBackupChain = $true
 
 function Show-MessageBox {
     param (
@@ -562,20 +562,24 @@ While($True){
                 Write-Verbose "FIRST VEEAM ACTIVE FULL BACKUP SUCCESSFULLY COMPLETED!" -Verbose
                 $countvbkfiles = (Get-ChildItem "$USBDriveVeeamJobFolderPath" "*.vbk" | Measure-Object).Count
                 if ($countvbkfiles -ge $DeleteBackupChain -and $DeleteBackupChain -ne 1 -and $DeleteBackupChain -ne 0) {
-                    $message = "Do you want to delete the oldest backup chain now that you have $DeleteBackupChain full backups on your backup storage?"
-                    # Show message box
-                    $result = Show-MessageBox -Message "$message" -Title "Confirm Deletion" -Buttons "YesNoCancel" -Icon "Information"
+                    if ($forceDeleteOldestBackupChain) {
+                        Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath -Force
+                    } else {
+                        $message = "Do you want to delete the oldest backup chain now that you have $DeleteBackupChain full backups on your backup storage?"
+                        # Show message box
+                        $result = Show-MessageBox -Message "$message" -Title "Confirm Deletion" -Buttons "YesNoCancel" -Icon "Information"
 
-                    # Process user response
-                    switch ($result) {
-                        'Yes' {
-                            Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
-                        }
-                        'No' {
-                            Write-Verbose "Deletion canceled by user." -Verbose
-                        }
-                        'Cancel' {
-                            Write-Verbose "Operation canceled." -Verbose
+                        # Process user response
+                        switch ($result) {
+                            'Yes' {
+                                Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
+                            }
+                            'No' {
+                                Write-Verbose "Deletion canceled by user." -Verbose
+                            }
+                            'Cancel' {
+                                Write-Verbose "Operation canceled." -Verbose
+                            }
                         }
                     }
                 }
@@ -586,7 +590,7 @@ While($True){
                 $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -OutputPath $PSScriptRoot
                 if ($logFilePath) {
                     Write-Verbose "Log file created at: $logFilePath" -Verbose
-                    Start-Process "$systemDirectory\notepad.exe" "$logFilePath"
+                    Start-Process "$Env:WinDir\system32\notepad.exe" "$logFilePath"
                 } else {
                     Write-Verbose "No errors found or log file not found." -Verbose
                     Start-Process -FilePath "$VEEAMEndpointTray"
@@ -636,20 +640,24 @@ While($True){
                 Write-Verbose "SUCCESSFULLY COMPLETED VEEAM ACTIVEFULLBACKUP (IF OLDER THAN X MONTHS)" -Verbose
                 $countvbkfiles = (Get-ChildItem "$USBDriveVeeamJobFolderPath" "*.vbk" | Measure-Object).Count
                 if ($countvbkfiles -ge $DeleteBackupChain -and $DeleteBackupChain -ne 1 -and $DeleteBackupChain -ne 0) {
-                    $message = "Do you want to delete the oldest backup chain now that you have $DeleteBackupChain full backups on your backup storage?"
-                    # Show message box
-                    $result = Show-MessageBox -Message "$message" -Title "Confirm Deletion" -Buttons "YesNoCancel" -Icon "Information"
+                    if ($forceDeleteOldestBackupChain) {
+                        Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath -Force
+                    } else {
+                        $message = "Do you want to delete the oldest backup chain now that you have $DeleteBackupChain full backups on your backup storage?"
+                        # Show message box
+                        $result = Show-MessageBox -Message "$message" -Title "Confirm Deletion" -Buttons "YesNoCancel" -Icon "Information"
 
-                    # Process user response
-                    switch ($result) {
-                        'Yes' {
-                            Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
-                        }
-                        'No' {
-                            Write-Verbose "Deletion canceled by user." -Verbose
-                        }
-                        'Cancel' {
-                            Write-Verbose "Operation canceled." -Verbose
+                        # Process user response
+                        switch ($result) {
+                            'Yes' {
+                                Show-MessageBoxAndDeleteVibFiles -USBDriveVeeamJobFolderPath $USBDriveVeeamJobFolderPath
+                            }
+                            'No' {
+                                Write-Verbose "Deletion canceled by user." -Verbose
+                            }
+                            'Cancel' {
+                                Write-Verbose "Operation canceled." -Verbose
+                            }
                         }
                     }
                 }
@@ -660,7 +668,7 @@ While($True){
                 $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -OutputPath $PSScriptRoot
                 if ($logFilePath) {
                     Write-Verbose "Log file created at: $logFilePath" -Verbose
-                    Start-Process "$systemDirectory\notepad.exe" "$logFilePath"
+                    Start-Process "$Env:WinDir\system32\notepad.exe" "$logFilePath"
                 } else {
                     Write-Verbose "No errors found or log file not found." -Verbose
                     Start-Process -FilePath "$VEEAMEndpointTray"
@@ -715,7 +723,7 @@ While($True){
                     $logFilePath = Check-VeeamLogs -VEEAMLog $VEEAMLog -OutputPath $PSScriptRoot
                     if ($logFilePath) {
                         Write-Verbose "Log file created at: $logFilePath" -Verbose
-                        Start-Process "$systemDirectory\notepad.exe" "$logFilePath"
+                        Start-Process "$Env:WinDir\system32\notepad.exe" "$logFilePath"
                     } else {
                         Write-Verbose "No errors found or log file not found." -Verbose
                         Start-Process -FilePath "$VEEAMEndpointTray"
